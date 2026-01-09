@@ -6,10 +6,11 @@ import { getProjectIndex } from "./projectIndex";
 const ensureWithinRoot = (root: string, target: string) => {
   const resolvedRoot = path.resolve(root);
   const resolvedTarget = path.resolve(target);
-  if (!resolvedTarget.startsWith(resolvedRoot)) {
-    throw new Error("Path escapes project root");
+  const relative = path.relative(resolvedRoot, resolvedTarget);
+  if (relative === "" || (!relative.startsWith(`..${path.sep}`) && relative !== ".." && !path.isAbsolute(relative))) {
+    return resolvedTarget;
   }
-  return resolvedTarget;
+  throw new Error("Path escapes project root");
 };
 
 export const resolveProjectPath = (projectId: string, relativePath = "") => {
