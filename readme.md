@@ -490,6 +490,3 @@ You are GPT-5 Codex acting as a senior engineer. Build this Electron app as desc
 
 Start by scaffolding the repo structure and the IPC contracts, then build in milestones A → J.
 
-⸻
-
-If you want, I can also generate a “starter repo blueprint” (folders + file names + interfaces + IPC handler signatures) that Codex can follow verbatim.
