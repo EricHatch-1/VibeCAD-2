@@ -1,4 +1,176 @@
-VibeCAD
+Developer Handoff Package
+
+VibeCAD – Local-First LLM + OpenSCAD Project-Based CAD App (Electron)
+
+This is a complete spec you can paste into GPT-5 Codex to begin implementation. It includes product scope, UX, architecture, data model, OpenSCAD CLI templates, agent/tool loop (with vision snapshots), IDE + SCAD import, and an evaluation plan for SCAD-generation models.
+
+⸻
+
+1) Product vision
+
+A draftsman AI for engineered, parametric OpenSCAD.
+Users describe practical/mechanical parts (brackets, enclosures, mounts). The app generates clean .scad, renders locally with OpenSCAD into a preview PNG + STL, and iterates using build logs, geometry summaries, and (when supported) rendered snapshots sent to a vision-capable model.
+
+⸻
+
+2) Goals and non-goals
+
+Goals
+	•	Fast path to printable STL (via local OpenSCAD export).
+	•	Clean, reusable parametric OpenSCAD (modules, named parameters, minimal magic numbers).
+	•	Project-based workflow: create/import projects, manage files, version tree with thumbnails.
+	•	Iterative agent loop:
+	•	reads build errors/warnings
+	•	optionally “sees” rendered PNG snapshots for shape correctness (vision)
+	•	can self-iterate (Autopilot) or assist (user approval)
+
+Non-goals (MVP)
+	•	Multi-user collaboration / accounts
+	•	Cloud file storage (LLM can be cloud, but files remain local)
+	•	Full CAD constraint solving or advanced mesh repair
+	•	Supporting many CAD formats beyond .scad and .stl
+
+⸻
+
+3) Core user workflows
+
+A) New model workflow
+	1.	Create Project (template: Blank / Bracket / Enclosure).
+	2.	Type prompt (optionally “Clarify first”).
+	3.	AI generates OpenSCAD in IDE.
+	4.	Click Build (or Autopilot builds).
+	5.	See 3D preview + rendered PNG + errors/warnings.
+	6.	Adjust sliders (auto-detected parameters).
+	7.	Say “make walls thicker and add fillets” and optionally click/highlight a region.
+	8.	Iterate until satisfied.
+	9.	Export STL.
+
+B) Import existing SCAD workflow (copy into workspace)
+	1.	Import .scad file or folder.
+	2.	App copies into workspace and chooses entrypoint.
+	3.	Build baseline v1 (preview + STL + logs).
+	4.	Use AI to refactor/improve/parameterize while preserving full version history.
+
+C) Project management workflow
+	•	Home “Project Library”:
+	•	Create, Import, Rename, Duplicate, Delete (move to app trash), Search, Open Recent
+	•	Single window: one active project at a time.
+
+⸻
+
+4) Product features
+
+4.1 Project-first system
+	•	Workspace root (user configurable), default ~/Documents/VibeCAD/Projects/
+	•	Projects are folders with project.json, src/, and versions/ snapshots/artifacts.
+
+4.2 Rich SCAD IDE
+	•	Monaco Editor with OpenSCAD syntax highlighting (Monarch).  ￼
+	•	File tree, tabs, search/replace, bracket matching.
+	•	Optional upgrade: LSP integration using monaco-languageclient.  ￼
+
+OpenSCAD LSP options:
+	•	dzhu/openscad-language-server uses tree-sitter.  ￼
+	•	Leathong/openscad-LSP (and VSCode extension) also available.  ￼
+
+4.3 Local rendering + exports via OpenSCAD CLI
+	•	Build pipeline produces:
+	•	preview.png (rendered snapshot)
+	•	model.stl
+	•	summary.json (stats for sanity checks)
+	•	openscad.log (stdout/stderr)
+	•	OpenSCAD CLI supports exporting output by extension and generating a summary file.  ￼
+
+4.4 Vision snapshots for iteration
+	•	When provider supports vision: send preview.png (and optionally a “selected region” screenshot) to the model to critique the design and guide edits.
+	•	Ollama vision accepts an images array in API requests.  ￼
+	•	LM Studio OpenAI-compatible endpoints explicitly support Chat Completions with text and images.  ￼
+
+4.5 Agent modes
+	•	Assist: AI proposes a patch, user clicks Apply.
+	•	Hybrid: AI iterates automatically but pauses at checkpoints.
+	•	Autopilot: AI iterates until pass criteria or limits.
+
+4.6 Version tree with thumbnails
+	•	Versions are nodes: v1, v2, v2.1, etc.
+	•	Each node contains:
+	•	src_snapshot/ (entire source tree at that version)
+	•	artifacts/ (png/stl/summary/log)
+	•	Tree view shows thumbnail preview and change summary.
+
+4.7 Parameter sliders
+	•	Auto-detect parameters from:
+	•	top-level assignments
+	•	optional conventions (Customizer-like comments)
+	•	Parameter changes rebuild quickly by passing defines to OpenSCAD (implementation detail: -D name=value is supported in OpenSCAD CLI).  ￼
+
+4.8 Backend option: CGAL vs Manifold
+	•	Provide a toggle in settings: Default CGAL; optional Manifold.
+	•	OpenSCAD supports selecting Manifold backend via --backend=manifold in newer builds; CGAL remains default.  ￼
+	•	Manifold’s goal is reliable manifold output, aligned with 3D printing needs.  ￼
+	•	Implement fallback: if Manifold errors/warnings, retry build with CGAL.
+
+⸻
+
+5) Technical architecture
+
+5.1 Tech stack
+	•	Electron (single-window desktop)
+	•	Renderer: React + TypeScript
+	•	Main process:
+	•	filesystem, OpenSCAD runner, LLM calls, SQLite index
+	•	3D viewer: three.js (or React Three Fiber)
+	•	IDE: Monaco Editor (syntax highlighting via Monarch).  ￼
+	•	LSP (optional): monaco-languageclient + OpenSCAD language server.  ￼
+
+5.2 Process separation
+	•	Renderer never touches filesystem or API keys directly.
+	•	Main process:
+	•	spawns OpenSCAD CLI
+	•	reads/writes project files
+	•	calls LLM providers
+	•	streams results to renderer via IPC
+
+5.3 macOS PATH reliability (critical)
+
+Packaged GUI apps often do not inherit shell PATH. Use fix-path in main process at startup.  ￼
+
+⸻
+
+6) Data model and on-disk layout
+
+6.1 Workspace layout
+
+<workspace>/
+  Projects/
+    <ProjectName>/
+      project.json
+      src/
+      versions/
+      cache/
+  .trash/
+    <project_id>/
+
+6.2 Project folder layout
+
+<ProjectName>/
+  project.json
+  src/
+    main.scad
+    ...
+  versions/
+    v1/
+      src_snapshot/...
+      artifacts/
+        preview.png
+        preview_selected.png   (optional)
+        model.stl
+        summary.json
+        build.json
+        openscad.log
+    v2.1/...
+  cache/
+    thumbnails/
 
 6.3 project.json (schema)
 	•	project_id (uuid)
@@ -317,3 +489,7 @@ You are GPT-5 Codex acting as a senior engineer. Build this Electron app as desc
 	•	Ensure macOS PATH reliability using fix-path at startup.
 
 Start by scaffolding the repo structure and the IPC contracts, then build in milestones A → J.
+
+⸻
+
+If you want, I can also generate a “starter repo blueprint” (folders + file names + interfaces + IPC handler signatures) that Codex can follow verbatim.
