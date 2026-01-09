@@ -2,15 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { FileNode } from "../shared/ipc";
 import { getProjectIndex } from "./projectIndex";
-
-const ensureWithinRoot = (root: string, target: string) => {
-  const resolvedRoot = path.resolve(root);
-  const resolvedTarget = path.resolve(target);
-  if (!resolvedTarget.startsWith(resolvedRoot)) {
-    throw new Error("Path escapes project root");
-  }
-  return resolvedTarget;
-};
+import { ensureWithinRoot } from "./projectPaths";
 
 export const resolveProjectPath = (projectId: string, relativePath = "") => {
   const project = getProjectIndex().getProject(projectId);
